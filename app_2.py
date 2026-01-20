@@ -16,10 +16,10 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔍 Deteksi & Pengelompokan Usaha Mirip (SBR) – Faiss")
+st.title("🔍 Deteksi & Pengelompokan Usaha Mirip (SBR)")
 
 # ===============================
-# SIDEBAR – PARAMETER DINAMIS
+# SIDEBAR – PARAMETER + GOVERNANCE
 # ===============================
 st.sidebar.header("⚙️ Parameter Kemiripan")
 
@@ -29,6 +29,18 @@ TH_JARAK_KUAT = st.sidebar.slider("Jarak Maksimum (meter)", 5, 50, 20)
 SIM_THRESHOLD = st.sidebar.slider("Cosine Similarity (Faiss)", 0.50, 0.95, 0.75)
 TOP_K = st.sidebar.slider("Jumlah Kandidat (TOP-K)", 3, 15, 5)
 TOP_N_GROUP = st.sidebar.slider("Jumlah Kelompok Ditampilkan", 5, 50, 20)
+
+st.sidebar.markdown("---")
+run_process = st.sidebar.button("🚀 Terapkan & Proses")
+
+st.sidebar.markdown("""
+### ℹ️ Penjelasan Threshold
+- **Threshold Nama**: makin tinggi → makin ketat (lebih sedikit false positive)
+- **Threshold Alamat**: menyaring usaha dengan alamat benar-benar mirip
+- **Jarak Maksimum**: toleransi lokasi usaha (GPS)
+- **Cosine Similarity**: hanya untuk menyaring kandidat awal
+- **Confidence Kelompok**: rata-rata skor akhir pasangan usaha
+""")
 
 # ===============================
 # FUNGSI UTIL
@@ -51,16 +63,13 @@ def to_float(val):
 def haversine(lat1, lon1, lat2, lon2):
     if None in (lat1, lon1, lat2, lon2):
         return None
-    try:
-        R = 6371000
-        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        a = sin(dlat/2)**2 + cos(lat1)*cos(lat2)*sin(dlon/2)**2
-        c = 2 * asin(sqrt(a))
-        return R * c
-    except:
-        return None
+    R = 6371000
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1)*cos(lat2)*sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    return R * c
 
 def skor_jarak(jarak):
     if jarak is None:
@@ -71,30 +80,20 @@ def skor_jarak(jarak):
         return 90
     elif jarak <= 50:
         return 70
-    else:
-        return 40
+    return 50
 
-def skor_akhir(skor_nama, skor_alamat, jarak):
-    return round(
-        0.45 * skor_nama +
-        0.35 * skor_alamat +
-        0.20 * skor_jarak(jarak),
-        2
-    )
+def skor_akhir(sn, sa, jarak):
+    return round(0.45*sn + 0.35*sa + 0.20*skor_jarak(jarak), 2)
 
 # ===============================
 # UPLOAD FILE
 # ===============================
 uploaded_file = st.file_uploader("📤 Upload file Excel SBR", type=["xlsx"])
 if not uploaded_file:
-    st.info("Silakan upload file Excel terlebih dahulu.")
     st.stop()
 
 df = pd.read_excel(uploaded_file)
 
-# ===============================
-# VALIDASI & KONVERSI
-# ===============================
 required_cols = [
     "idsbr", "nama_usaha", "alamat_usaha",
     "latitude", "longitude",
@@ -110,6 +109,10 @@ if missing:
 df["latitude"] = df["latitude"].apply(to_float)
 df["longitude"] = df["longitude"].apply(to_float)
 
+if not run_process:
+    st.info("Atur parameter di sidebar lalu klik **🚀 Terapkan & Proses**")
+    st.stop()
+
 # ===============================
 # PREPROCESSING
 # ===============================
@@ -118,37 +121,31 @@ df["nama_norm"] = df["nama_usaha"].apply(normalize_text)
 df["alamat_norm"] = df["alamat_usaha"].apply(normalize_text)
 
 # ===============================
-# TF-IDF VECTOR (PROGRESS SENDIRI)
+# TF-IDF
 # ===============================
-st.subheader("🧠 Membentuk vektor TF-IDF (Nama Usaha)")
-progress_tfidf = st.progress(0)
-
+st.subheader("🧠 TF-IDF Nama Usaha")
+p1 = st.progress(0)
 vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 3), min_df=2)
-X = vectorizer.fit_transform(df["nama_norm"].astype("U"))
-progress_tfidf.progress(60)
-
-X = X.astype("float32").toarray()
-progress_tfidf.progress(100)
+X = vectorizer.fit_transform(df["nama_norm"].astype("U")).astype("float32").toarray()
+p1.progress(100)
 
 # ===============================
-# FAISS INDEX (PROGRESS SENDIRI)
+# FAISS
 # ===============================
-st.subheader("⚡ Mencari Kandidat Mirip (Faiss)")
-progress_faiss = st.progress(0)
-
+st.subheader("⚡ Kandidat Mirip (Faiss)")
+p2 = st.progress(0)
 faiss.normalize_L2(X)
-progress_faiss.progress(30)
-
 index = faiss.IndexFlatIP(X.shape[1])
 index.add(X)
-progress_faiss.progress(70)
-
 similarities, indices = index.search(X, TOP_K)
-progress_faiss.progress(100)
+p2.progress(100)
 
 # ===============================
-# UNION FIND
+# VALIDASI KANDIDAT
 # ===============================
+st.subheader("🔗 Validasi Kandidat")
+p3 = st.progress(0)
+
 parent = list(range(len(df)))
 
 def find(x):
@@ -164,73 +161,53 @@ def union(a, b):
 
 pair_scores = []
 
-# ===============================
-# VALIDASI KANDIDAT (PROGRESS UTAMA)
-# ===============================
-st.subheader("🔗 Validasi Kandidat (Nama + Alamat + Jarak)")
-progress_validate = st.progress(0)
-total = len(df)
-
 for i in range(len(df)):
-    progress_validate.progress(int((i + 1) / total * 100))
-
+    p3.progress(int((i + 1) / len(df) * 100))
     for pos, j in enumerate(indices[i]):
-        if j <= i:
-            continue
-        if similarities[i][pos] < SIM_THRESHOLD:
+        if j <= i or similarities[i][pos] < SIM_THRESHOLD:
             continue
 
-        skor_n = fuzz.token_sort_ratio(df.loc[i, "nama_norm"], df.loc[j, "nama_norm"])
-        skor_a = fuzz.token_sort_ratio(df.loc[i, "alamat_norm"], df.loc[j, "alamat_norm"])
+        sn = fuzz.token_sort_ratio(df.loc[i, "nama_norm"], df.loc[j, "nama_norm"])
+        sa = fuzz.token_sort_ratio(df.loc[i, "alamat_norm"], df.loc[j, "alamat_norm"])
         jarak = haversine(
             df.loc[i, "latitude"], df.loc[i, "longitude"],
             df.loc[j, "latitude"], df.loc[j, "longitude"]
         )
 
-        final_score = skor_akhir(skor_n, skor_a, jarak)
-
-        if (
-            (skor_n >= TH_NAMA and skor_a >= TH_ALAMAT) or
-            (skor_n >= TH_NAMA and jarak is not None and jarak <= TH_JARAK_KUAT)
-        ):
+        if (sn >= TH_NAMA and sa >= TH_ALAMAT) or (sn >= TH_NAMA and jarak and jarak <= TH_JARAK_KUAT):
             union(i, j)
             pair_scores.append({
                 "idsbr_1": df.loc[i, "idsbr"],
                 "idsbr_2": df.loc[j, "idsbr"],
-                "skor_nama": skor_n,
-                "skor_alamat": skor_a,
+                "skor_nama": sn,
+                "skor_alamat": sa,
                 "jarak_meter": round(jarak, 2) if jarak else None,
-                "skor_akhir": final_score
+                "skor_akhir": skor_akhir(sn, sa, jarak)
             })
 
 # ===============================
-# PAIR DF + NAMA & ALAMAT
+# PAIR DF + DETAIL
 # ===============================
 pair_df = pd.DataFrame(pair_scores)
 
 if not pair_df.empty:
-    pair_df = pair_df.merge(
-        df[["idsbr", "nama_usaha", "alamat_usaha"]],
-        left_on="idsbr_1", right_on="idsbr", how="left"
-    ).rename(columns={
-        "nama_usaha": "nama_usaha_1",
-        "alamat_usaha": "alamat_usaha_1"
-    }).drop(columns=["idsbr"])
-
-    pair_df = pair_df.merge(
-        df[["idsbr", "nama_usaha", "alamat_usaha"]],
-        left_on="idsbr_2", right_on="idsbr", how="left"
-    ).rename(columns={
-        "nama_usaha": "nama_usaha_2",
-        "alamat_usaha": "alamat_usaha_2"
-    }).drop(columns=["idsbr"])
+    for side in ["1", "2"]:
+        pair_df = pair_df.merge(
+            df[["idsbr", "nama_usaha", "alamat_usaha"]],
+            left_on=f"idsbr_{side}",
+            right_on="idsbr",
+            how="left"
+        ).rename(columns={
+            "nama_usaha": f"nama_usaha_{side}",
+            "alamat_usaha": f"alamat_usaha_{side}"
+        }).drop(columns=["idsbr"])
 
 # ===============================
-# BENTUK GRUP + CONFIDENCE
+# GROUP + CONFIDENCE
 # ===============================
 groups = defaultdict(list)
-for idx in range(len(df)):
-    groups[find(idx)].append(idx)
+for i in range(len(df)):
+    groups[find(i)].append(i)
 
 group_rows = []
 for gid, members in groups.items():
@@ -239,38 +216,47 @@ for gid, members in groups.items():
             pair_df["idsbr_1"].isin(df.loc[members, "idsbr"]) |
             pair_df["idsbr_2"].isin(df.loc[members, "idsbr"])
         ]["skor_akhir"]
-
-        confidence = round(skor_group.mean(), 2) if not skor_group.empty else None
-
         group_rows.append({
             "group_id": f"G{gid}",
             "jumlah_usaha": len(members),
             "nama_representatif": df.loc[members[0], "nama_usaha"],
             "kecamatan": df.loc[members[0], "nmkec"],
-            "confidence_group": confidence
+            "confidence_group": round(skor_group.mean(), 2) if not skor_group.empty else None
         })
 
-df_group = (
-    pd.DataFrame(group_rows)
-    .sort_values("jumlah_usaha", ascending=False)
-    .reset_index(drop=True)
-)
+df_group = pd.DataFrame(group_rows).sort_values("jumlah_usaha", ascending=False)
 
 # ===============================
 # RINGKASAN OTOMATIS
 # ===============================
 st.subheader("📊 Ringkasan Otomatis")
-col1, col2, col3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
+c1.metric("Total Usaha", len(df))
+c2.metric("Total Kelompok Mirip", len(df_group))
+c3.metric("Rata-rata Confidence", round(df_group["confidence_group"].mean(), 2))
 
-col1.metric("Total Usaha", len(df))
-col2.metric("Total Kelompok Mirip", len(df_group))
-col3.metric("Rata-rata Confidence", round(df_group["confidence_group"].mean(), 2))
+# ===============================
+# STATISTIK KECAMATAN
+# ===============================
+st.subheader("📍 Statistik Lintas Kecamatan")
+kec = df_group.groupby("kecamatan").agg(
+    jumlah_kelompok=("group_id", "count"),
+    total_usaha=("jumlah_usaha", "sum"),
+    rata_confidence=("confidence_group", "mean")
+).reset_index().sort_values("jumlah_kelompok", ascending=False)
+
+st.dataframe(kec, use_container_width=True)
+
+st.markdown("""
+**Interpretasi:**
+- Kecamatan dengan **banyak kelompok + confidence tinggi** adalah **prioritas verifikasi lapangan**.
+""")
 
 # ===============================
 # SEARCH + TOP N
 # ===============================
 st.subheader("📌 Kelompok Usaha Mirip")
-search = st.text_input("🔎 Cari (nama usaha / kecamatan)")
+search = st.text_input("🔎 Cari (nama / kecamatan)")
 
 df_view = df_group.copy()
 if search:
@@ -307,7 +293,7 @@ if not pair_df.empty:
     )
 
 # ===============================
-# DETAIL PER GRUP (TOP N)
+# DETAIL PER GRUP
 # ===============================
 st.subheader("🔎 Detail Usaha per Kelompok")
 
@@ -353,7 +339,7 @@ for _, row in df_top.iterrows():
 # ===============================
 st.markdown("""
 ### 🧭 Interpretasi Skor
-- **Confidence ≥ 90** : Hampir pasti usaha sama  
+- **≥ 90** : Hampir pasti usaha sama  
 - **80 – 89** : Sangat mungkin sama  
 - **70 – 79** : Perlu verifikasi  
 - **< 70** : Kemungkinan beda  
