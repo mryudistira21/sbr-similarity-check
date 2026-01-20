@@ -5,7 +5,6 @@ from rapidfuzz import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from collections import defaultdict
 from math import radians, cos, sin, asin, sqrt
-import faiss
 import io
 
 # ===============================
@@ -187,13 +186,33 @@ p1.progress(100)
 # ===============================
 # FAISS
 # ===============================
-st.subheader("⚡ Kandidat Mirip (Faiss)")
-p2 = st.progress(0)
-faiss.normalize_L2(X)
-index = faiss.IndexFlatIP(X.shape[1])
-index.add(X)
-similarities, indices = index.search(X, TOP_K)
-p2.progress(100)
+st.subheader("⚡ Kandidat Mirip")
+
+if USE_FAISS:
+    st.caption("Menggunakan FAISS (cepat)")
+    p2 = st.progress(0)
+    faiss.normalize_L2(X)
+    index = faiss.IndexFlatIP(X.shape[1])
+    index.add(X)
+    similarities, indices = index.search(X, TOP_K)
+    p2.progress(100)
+
+else:
+    st.caption("FAISS tidak tersedia → fallback cosine similarity (lebih lambat)")
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    sim_matrix = cosine_similarity(X)
+    similarities = []
+    indices = []
+
+    for i in range(len(sim_matrix)):
+        sims = sim_matrix[i]
+        top_idx = np.argsort(sims)[::-1][:TOP_K]
+        indices.append(top_idx)
+        similarities.append(sims[top_idx])
+
+    similarities = np.array(similarities)
+    indices = np.array(indices)
 
 # ===============================
 # VALIDASI KANDIDAT
@@ -399,4 +418,5 @@ st.markdown("""
 - **70 – 79** : Perlu verifikasi  
 - **< 70** : Kemungkinan beda  
 """)
+
 
