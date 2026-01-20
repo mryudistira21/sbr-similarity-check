@@ -1,5 +1,5 @@
 # ==========================================================
-# SBR SIMILARITY CHECK — STABLE STREAMLIT CLOUD VERSION
+# SBR SIMILARITY CHECK
 # ==========================================================
 
 import streamlit as st
@@ -18,6 +18,9 @@ import io
 # ===============================
 if "is_running" not in st.session_state:
     st.session_state.is_running = False
+
+if "finished" not in st.session_state:
+    st.session_state.finished = False
 
 # ===============================
 # STREAMLIT CONFIG
@@ -105,8 +108,9 @@ run_process = st.sidebar.button(
 # LOGGING
 # ===============================
 st.subheader("🧾 Log Proses")
-log_box = st.empty()
-logs = []
+with st.expander("📜 Lihat log proses"):
+    log_box = st.empty()
+    logs = []
 
 def log(msg):
     logs.append(msg)
@@ -301,14 +305,20 @@ for i in range(N):
 
         if (sn >= TH_NAMA and sa >= TH_ALAMAT) or (sn >= TH_NAMA and jarak and jarak <= TH_JARAK_KUAT):
             union(i, j)
-            pair_scores.append({
-                "idsbr_1": df.loc[i, "idsbr"],
-                "idsbr_2": df.loc[j, "idsbr"],
-                "skor_nama": sn,
-                "skor_alamat": sa,
-                "jarak_meter": round(jarak, 2) if jarak else None,
-                "skor_akhir": skor_akhir(sn, sa, jarak)
-            })
+
+            id1 = df.loc[i, "idsbr"]
+            id2 = df.loc[j, "idsbr"]
+            
+            if id1 > id2:
+                id1, id2 = id2, id1
+                pair_scores.append({
+                    "idsbr_1": df.loc[i, "idsbr"],
+                    "idsbr_2": df.loc[j, "idsbr"],
+                    "skor_nama": sn,
+                    "skor_alamat": sa,
+                    "jarak_meter": round(jarak, 2) if jarak else None,
+                    "skor_akhir": skor_akhir(sn, sa, jarak)
+                })
 
 log(f"Total pasangan mirip: {len(pair_scores)}")
 
@@ -359,6 +369,11 @@ for gid, members in groups.items():
 
 df_group = pd.DataFrame(group_rows).sort_values("jumlah_usaha", ascending=False)
 
+st.session_state.df_group = df_group
+st.session_state.pair_df = pair_df
+st.session_state.groups = groups
+st.session_state.df = df
+
 # ===============================
 # RINGKASAN
 # ===============================
@@ -374,7 +389,7 @@ c3.metric("Rata-rata Confidence", round(df_group["confidence_group"].mean(), 2))
 st.subheader("📌 Kelompok Usaha Mirip")
 search = st.text_input("🔎 Cari (nama usaha / kecamatan)")
 
-df_view = df_group.copy()
+df_view = st.session_state.df_group.copy()
 if search:
     s = search.lower()
     df_view = df_view[
@@ -388,6 +403,7 @@ df_rest = df_view.iloc[TOP_N_GROUP:]
 st.dataframe(df_top, use_container_width=True)
 
 st.session_state.is_running = False
+st.session_state.finished = True
 st.success("✅ Proses selesai")
 
 # ===============================
@@ -424,7 +440,7 @@ for _, row in df_top.iterrows():
         f"{row['group_id']} — {row['nama_representatif']} "
         f"({row['jumlah_usaha']} usaha | Confidence {row['confidence_group']})"
     ):
-        detail = df.loc[members, [
+        detail = st.session_state.df.loc[members, [
             "idsbr", "nama_usaha", "alamat_usaha",
             "latitude", "longitude",
             "nmdesa", "nmkec",
@@ -438,12 +454,16 @@ for _, row in df_top.iterrows():
                 (pair_df["idsbr_1"].isin(detail["idsbr"])) |
                 (pair_df["idsbr_2"].isin(detail["idsbr"]))
             ][[
-                "nama_usaha_1", "alamat_usaha_1",
-                "nama_usaha_2", "alamat_usaha_2",
+                "idsbr_1","nama_usaha_1", "alamat_usaha_1",
+                "idsbr_2","nama_usaha_2", "alamat_usaha_2",
                 "skor_nama", "skor_alamat",
                 "jarak_meter", "skor_akhir"
             ]].sort_values("skor_akhir", ascending=False),
             use_container_width=True
+        )
+        st.caption(
+            f"Kelompok ini berisi {len(set(pair_df['idsbr_1']).union(pair_df['idsbr_2']))} usaha unik "
+            f"dengan {len(pair_df)} pasangan kemiripan"
         )
 
         st.markdown("#### 📍 Peta Lokasi")
@@ -463,3 +483,4 @@ st.markdown("""
 - **70 – 79** : Perlu verifikasi  
 - **< 70** : Kemungkinan beda  
 """)
+
