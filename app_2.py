@@ -128,10 +128,12 @@ df["alamat_norm"] = df["alamat_usaha"].apply(normalize_text)
 # ===============================
 # TF-IDF
 # ===============================
+st.write("Jumlah baris:", len(df))
+
 st.subheader("🧠 TF-IDF Nama Usaha")
 p1 = st.progress(0)
 vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 3), min_df=2)
-X = vectorizer.fit_transform(df["nama_norm"].astype("U")).astype("float32").toarray()
+X = vectorizer.fit_transform(df["nama_norm"].astype("U"))
 p1.progress(100)
 
 # ===============================
@@ -141,29 +143,23 @@ st.subheader("⚡ Kandidat Mirip")
 
 p2 = st.progress(0)
 
-if USE_FAISS:
-    faiss.normalize_L2(X)
-    index = faiss.IndexFlatIP(X.shape[1])
-    index.add(X)
-    similarities, indices = index.search(X, TOP_K)
-else:
-    similarities = np.zeros((len(X), TOP_K), dtype=np.float32)
-    indices = np.zeros((len(X), TOP_K), dtype=np.int32)
+similarities = np.zeros((len(X), TOP_K), dtype=np.float32)
+indices = np.zeros((len(X), TOP_K), dtype=np.int32)
 
-    BATCH_SIZE = 300   # aman untuk Streamlit Cloud
+BATCH_SIZE = 200  # kecil tapi aman
 
-    for start in range(0, len(X), BATCH_SIZE):
-        end = min(start + BATCH_SIZE, len(X))
+for start in range(0, X.shape[0], BATCH_SIZE):
+    end = min(start + BATCH_SIZE, X.shape[0])
 
-        sim_chunk = cosine_similarity(X[start:end], X)
+    sim_chunk = cosine_similarity(X[start:end], X)
 
-        for i in range(sim_chunk.shape[0]):
-            row = sim_chunk[i]
-            top_idx = np.argpartition(row, -TOP_K)[-TOP_K:]
-            top_idx = top_idx[np.argsort(row[top_idx])[::-1]]
+    for i in range(sim_chunk.shape[0]):
+        row = sim_chunk[i]
+        top_idx = np.argpartition(row, -TOP_K)[-TOP_K:]
+        top_idx = top_idx[np.argsort(row[top_idx])[::-1]]
 
-            similarities[start + i] = row[top_idx]
-            indices[start + i] = top_idx
+        similarities[start + i] = row[top_idx]
+        indices[start + i] = top_idx
 
 p2.progress(100)
 
@@ -240,4 +236,5 @@ df_group = pd.DataFrame(group_rows).sort_values("jumlah_usaha", ascending=False)
 
 st.success("✅ Proses selesai tanpa crash")
 st.dataframe(df_group.head(TOP_N_GROUP), use_container_width=True)
+
 
