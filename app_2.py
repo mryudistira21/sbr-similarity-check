@@ -143,8 +143,10 @@ st.subheader("⚡ Kandidat Mirip")
 
 p2 = st.progress(0)
 
-similarities = np.zeros((len(X), TOP_K), dtype=np.float32)
-indices = np.zeros((len(X), TOP_K), dtype=np.int32)
+N = X.shape[0]
+
+similarities = np.zeros((N, TOP_K), dtype=np.float32)
+indices = np.zeros((N, TOP_K), dtype=np.int32)
 
 BATCH_SIZE = 200  # kecil tapi aman
 
@@ -236,5 +238,6 @@ df_group = pd.DataFrame(group_rows).sort_values("jumlah_usaha", ascending=False)
 
 st.success("✅ Proses selesai tanpa crash")
 st.dataframe(df_group.head(TOP_N_GROUP), use_container_width=True)
+
 
 
