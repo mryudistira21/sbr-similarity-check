@@ -1,7 +1,8 @@
 streamlit
 pandas
-numpy <2.0
+numpy<2.0
 scikit-learn
 rapidfuzz
 faiss-cpu
 openpyxl
+
