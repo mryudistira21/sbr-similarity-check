@@ -147,15 +147,23 @@ if USE_FAISS:
     index.add(X)
     similarities, indices = index.search(X, TOP_K)
 else:
-    sim_matrix = cosine_similarity(X)
-    similarities, indices = [], []
-    for i in range(len(sim_matrix)):
-        sims = sim_matrix[i]
-        top_idx = np.argsort(sims)[::-1][:TOP_K]
-        indices.append(top_idx)
-        similarities.append(sims[top_idx])
-    similarities = np.array(similarities)
-    indices = np.array(indices)
+    similarities = np.zeros((len(X), TOP_K), dtype=np.float32)
+    indices = np.zeros((len(X), TOP_K), dtype=np.int32)
+
+    BATCH_SIZE = 300   # aman untuk Streamlit Cloud
+
+    for start in range(0, len(X), BATCH_SIZE):
+        end = min(start + BATCH_SIZE, len(X))
+
+        sim_chunk = cosine_similarity(X[start:end], X)
+
+        for i in range(sim_chunk.shape[0]):
+            row = sim_chunk[i]
+            top_idx = np.argpartition(row, -TOP_K)[-TOP_K:]
+            top_idx = top_idx[np.argsort(row[top_idx])[::-1]]
+
+            similarities[start + i] = row[top_idx]
+            indices[start + i] = top_idx
 
 p2.progress(100)
 
@@ -232,3 +240,4 @@ df_group = pd.DataFrame(group_rows).sort_values("jumlah_usaha", ascending=False)
 
 st.success("✅ Proses selesai tanpa crash")
 st.dataframe(df_group.head(TOP_N_GROUP), use_container_width=True)
+
