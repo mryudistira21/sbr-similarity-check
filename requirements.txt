@@ -1,8 +1,8 @@
-streamlit
-pandas
-numpy<2.0
-scikit-learn
-rapidfuzz
-faiss-cpu
-openpyxl
-
+streamlit==1.53.0
+numpy==1.26.4
+pandas==2.1.4
+scikit-learn==1.3.2
+scipy==1.11.4
+rapidfuzz==3.14.3
+faiss-cpu==1.13.2
+openpyxl==3.1.5
