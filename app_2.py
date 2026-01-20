@@ -311,14 +311,15 @@ for i in range(N):
             
             if id1 > id2:
                 id1, id2 = id2, id1
-                pair_scores.append({
-                    "idsbr_1": df.loc[i, "idsbr"],
-                    "idsbr_2": df.loc[j, "idsbr"],
-                    "skor_nama": sn,
-                    "skor_alamat": sa,
-                    "jarak_meter": round(jarak, 2) if jarak else None,
-                    "skor_akhir": skor_akhir(sn, sa, jarak)
-                })
+            
+            pair_scores.append({
+                "idsbr_1": df.loc[i, "idsbr"],
+                "idsbr_2": df.loc[j, "idsbr"],
+                "skor_nama": sn,
+                "skor_alamat": sa,
+                "jarak_meter": round(jarak, 2) if jarak else None,
+                "skor_akhir": skor_akhir(sn, sa, jarak)
+            })
 
 log(f"Total pasangan mirip: {len(pair_scores)}")
 
@@ -461,11 +462,17 @@ for _, row in df_top.iterrows():
             ]].sort_values("skor_akhir", ascending=False),
             use_container_width=True
         )
-        st.caption(
-            f"Kelompok ini berisi {len(set(pair_df['idsbr_1']).union(pair_df['idsbr_2']))} usaha unik "
-            f"dengan {len(pair_df)} pasangan kemiripan"
-        )
 
+        pair_sub = pair_df[
+        (pair_df["idsbr_1"].isin(detail["idsbr"])) | (pair_df["idsbr_2"].isin(detail["idsbr"]))
+        ]
+        
+        usaha_unik = set(pair_sub["idsbr_1"]).union(pair_sub["idsbr_2"])
+        st.caption(
+            f"Kelompok ini berisi {len(usaha_unik)} usaha unik "
+            f"dengan {len(pair_sub)} pasangan kemiripan"
+        )
+        
         st.markdown("#### 📍 Peta Lokasi")
         st.map(
             detail[["latitude", "longitude"]]
@@ -483,4 +490,5 @@ st.markdown("""
 - **70 – 79** : Perlu verifikasi  
 - **< 70** : Kemungkinan beda  
 """)
+
 
