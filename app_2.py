@@ -23,24 +23,79 @@ st.title("🔍 Deteksi & Pengelompokan Usaha Mirip (SBR)")
 # ===============================
 st.sidebar.header("⚙️ Parameter Kemiripan")
 
-TH_NAMA = st.sidebar.slider("Threshold Nama", 60, 100, 85)
-TH_ALAMAT = st.sidebar.slider("Threshold Alamat", 60, 100, 75)
-TH_JARAK_KUAT = st.sidebar.slider("Jarak Maksimum (meter)", 5, 50, 20)
-SIM_THRESHOLD = st.sidebar.slider("Cosine Similarity (Faiss)", 0.50, 0.95, 0.75)
-TOP_K = st.sidebar.slider("Jumlah Kandidat (TOP-K)", 3, 15, 5)
-TOP_N_GROUP = st.sidebar.slider("Jumlah Kelompok Ditampilkan", 5, 50, 20)
+TH_NAMA = st.sidebar.slider(
+    "Threshold Nama",
+    60, 100, 85,
+    help=(
+        "Kemiripan teks nama usaha (0–100).\n\n"
+        "• Nilai tinggi → pencocokan lebih ketat\n"
+        "• Mengurangi salah deteksi\n"
+        "• Bisa melewatkan duplikasi dengan penulisan berbeda\n\n"
+        "Contoh:\n"
+        "85 → 'Toko Sumber Rejeki' ≈ 'Sumber Rejeki'\n"
+        "95 → Hampir identik\n\n"
+        "Rekomendasi: 80–90"
+    )
+)
+
+TH_ALAMAT = st.sidebar.slider(
+    "Threshold Alamat",
+    60, 100, 75,
+    help=(
+        "Kemiripan teks alamat usaha.\n\n"
+        "• Membantu membedakan usaha bernama sama\n"
+        "• Alamat tidak baku bisa menurunkan skor\n\n"
+        "Rekomendasi: 70–80"
+    )
+)
+
+TH_JARAK_KUAT = st.sidebar.slider(
+    "Jarak Maksimum (meter)",
+    5, 50, 20,
+    help=(
+        "Batas jarak koordinat GPS untuk dianggap usaha sama.\n\n"
+        "• ≤ 10 m  : hampir pasti lokasi sama\n"
+        "• ≤ 20 m  : sangat mungkin sama\n"
+        "• ≤ 50 m  : masih mungkin (ruko/pasar)\n\n"
+        "Rekomendasi: 20 meter"
+    )
+)
+
+SIM_THRESHOLD = st.sidebar.slider(
+    "Cosine Similarity (Faiss)",
+    0.50, 0.95, 0.75,
+    help=(
+        "Digunakan untuk menyaring kandidat awal saja.\n"
+        "Bukan keputusan akhir.\n\n"
+        "• Nilai tinggi → kandidat lebih mirip\n"
+        "• Proses lebih cepat\n"
+        "• Bisa melewatkan pasangan yang agak berbeda\n\n"
+        "Rekomendasi: 0.70 – 0.80"
+    )
+)
+
+TOP_K = st.sidebar.slider(
+    "Jumlah Kandidat (TOP-K)",
+    3, 15, 5,
+    help=(
+        "Jumlah tetangga terdekat yang dicek per usaha.\n\n"
+        "• Nilai kecil → cepat tapi bisa miss\n"
+        "• Nilai besar → lebih lengkap tapi lebih lambat\n\n"
+        "Rekomendasi: 5–10"
+    )
+)
+
+TOP_N_GROUP = st.sidebar.slider(
+    "Jumlah Kelompok Ditampilkan",
+    5, 50, 20,
+    help=(
+        "Jumlah kelompok usaha mirip yang ditampilkan di layar.\n"
+        "Kelompok lain tetap bisa diunduh sebagai Excel."
+    )
+)
 
 st.sidebar.markdown("---")
 run_process = st.sidebar.button("🚀 Terapkan & Proses")
-
-st.sidebar.markdown("""
-### ℹ️ Penjelasan Threshold
-- **Threshold Nama**: makin tinggi → makin ketat (lebih sedikit false positive)
-- **Threshold Alamat**: menyaring usaha dengan alamat benar-benar mirip
-- **Jarak Maksimum**: toleransi lokasi usaha (GPS)
-- **Cosine Similarity**: hanya untuk menyaring kandidat awal
-- **Confidence Kelompok**: rata-rata skor akhir pasangan usaha
-""")
 
 # ===============================
 # FUNGSI UTIL
@@ -344,3 +399,4 @@ st.markdown("""
 - **70 – 79** : Perlu verifikasi  
 - **< 70** : Kemungkinan beda  
 """)
+
