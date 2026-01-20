@@ -1,8 +1,19 @@
+# ==========================================================
+# FAISS OPTIONAL (AMAN UNTUK STREAMLIT CLOUD)
+# ==========================================================
+USE_FAISS = False
+try:
+    import faiss
+    USE_FAISS = True
+except Exception:
+    USE_FAISS = False
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 from rapidfuzz import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from collections import defaultdict
 from math import radians, cos, sin, asin, sqrt
 import io
@@ -11,90 +22,30 @@ import io
 # STREAMLIT CONFIG
 # ===============================
 st.set_page_config(
-    page_title="Deteksi Usaha Mirip (SBR) – Faiss",
+    page_title="Deteksi Usaha Mirip (SBR)",
     layout="wide"
 )
 
 st.title("🔍 Deteksi & Pengelompokan Usaha Mirip (SBR)")
 
 # ===============================
-# SIDEBAR – PARAMETER + GOVERNANCE
+# SIDEBAR – PARAMETER
 # ===============================
 st.sidebar.header("⚙️ Parameter Kemiripan")
 
-TH_NAMA = st.sidebar.slider(
-    "Threshold Nama",
-    60, 100, 85,
-    help=(
-        "Kemiripan teks nama usaha (0–100).\n\n"
-        "• Nilai tinggi → pencocokan lebih ketat\n"
-        "• Mengurangi salah deteksi\n"
-        "• Bisa melewatkan duplikasi dengan penulisan berbeda\n\n"
-        "Contoh:\n"
-        "85 → 'Toko Sumber Rejeki' ≈ 'Sumber Rejeki'\n"
-        "95 → Hampir identik\n\n"
-        "Rekomendasi: 80–90"
-    )
-)
-
-TH_ALAMAT = st.sidebar.slider(
-    "Threshold Alamat",
-    60, 100, 75,
-    help=(
-        "Kemiripan teks alamat usaha.\n\n"
-        "• Membantu membedakan usaha bernama sama\n"
-        "• Alamat tidak baku bisa menurunkan skor\n\n"
-        "Rekomendasi: 70–80"
-    )
-)
-
-TH_JARAK_KUAT = st.sidebar.slider(
-    "Jarak Maksimum (meter)",
-    5, 50, 20,
-    help=(
-        "Batas jarak koordinat GPS untuk dianggap usaha sama.\n\n"
-        "• ≤ 10 m  : hampir pasti lokasi sama\n"
-        "• ≤ 20 m  : sangat mungkin sama\n"
-        "• ≤ 50 m  : masih mungkin (ruko/pasar)\n\n"
-        "Rekomendasi: 20 meter"
-    )
-)
-
-SIM_THRESHOLD = st.sidebar.slider(
-    "Cosine Similarity (Faiss)",
-    0.50, 0.95, 0.75,
-    help=(
-        "Digunakan untuk menyaring kandidat awal saja.\n"
-        "Bukan keputusan akhir.\n\n"
-        "• Nilai tinggi → kandidat lebih mirip\n"
-        "• Proses lebih cepat\n"
-        "• Bisa melewatkan pasangan yang agak berbeda\n\n"
-        "Rekomendasi: 0.70 – 0.80"
-    )
-)
-
-TOP_K = st.sidebar.slider(
-    "Jumlah Kandidat (TOP-K)",
-    3, 15, 5,
-    help=(
-        "Jumlah tetangga terdekat yang dicek per usaha.\n\n"
-        "• Nilai kecil → cepat tapi bisa miss\n"
-        "• Nilai besar → lebih lengkap tapi lebih lambat\n\n"
-        "Rekomendasi: 5–10"
-    )
-)
-
-TOP_N_GROUP = st.sidebar.slider(
-    "Jumlah Kelompok Ditampilkan",
-    5, 50, 20,
-    help=(
-        "Jumlah kelompok usaha mirip yang ditampilkan di layar.\n"
-        "Kelompok lain tetap bisa diunduh sebagai Excel."
-    )
-)
+TH_NAMA = st.sidebar.slider("Threshold Nama", 60, 100, 85)
+TH_ALAMAT = st.sidebar.slider("Threshold Alamat", 60, 100, 75)
+TH_JARAK_KUAT = st.sidebar.slider("Jarak Maksimum (meter)", 5, 50, 20)
+SIM_THRESHOLD = st.sidebar.slider("Cosine Similarity", 0.50, 0.95, 0.75)
+TOP_K = st.sidebar.slider("Jumlah Kandidat (TOP-K)", 3, 15, 5)
+TOP_N_GROUP = st.sidebar.slider("Jumlah Kelompok Ditampilkan", 5, 50, 20)
 
 st.sidebar.markdown("---")
 run_process = st.sidebar.button("🚀 Terapkan & Proses")
+
+st.sidebar.info(
+    f"Mode pencarian kandidat: **{'FAISS (cepat)' if USE_FAISS else 'Cosine Fallback (aman)'}**"
+)
 
 # ===============================
 # FUNGSI UTIL
@@ -184,35 +135,29 @@ X = vectorizer.fit_transform(df["nama_norm"].astype("U")).astype("float32").toar
 p1.progress(100)
 
 # ===============================
-# FAISS
+# KANDIDAT MIRIP (FAISS / FALLBACK)
 # ===============================
 st.subheader("⚡ Kandidat Mirip")
 
+p2 = st.progress(0)
+
 if USE_FAISS:
-    st.caption("Menggunakan FAISS (cepat)")
-    p2 = st.progress(0)
     faiss.normalize_L2(X)
     index = faiss.IndexFlatIP(X.shape[1])
     index.add(X)
     similarities, indices = index.search(X, TOP_K)
-    p2.progress(100)
-
 else:
-    st.caption("FAISS tidak tersedia → fallback cosine similarity (lebih lambat)")
-    from sklearn.metrics.pairwise import cosine_similarity
-
     sim_matrix = cosine_similarity(X)
-    similarities = []
-    indices = []
-
+    similarities, indices = [], []
     for i in range(len(sim_matrix)):
         sims = sim_matrix[i]
         top_idx = np.argsort(sims)[::-1][:TOP_K]
         indices.append(top_idx)
         similarities.append(sims[top_idx])
-
     similarities = np.array(similarities)
     indices = np.array(indices)
+
+p2.progress(100)
 
 # ===============================
 # VALIDASI KANDIDAT
@@ -260,25 +205,10 @@ for i in range(len(df)):
             })
 
 # ===============================
-# PAIR DF + DETAIL
+# HASIL
 # ===============================
 pair_df = pd.DataFrame(pair_scores)
 
-if not pair_df.empty:
-    for side in ["1", "2"]:
-        pair_df = pair_df.merge(
-            df[["idsbr", "nama_usaha", "alamat_usaha"]],
-            left_on=f"idsbr_{side}",
-            right_on="idsbr",
-            how="left"
-        ).rename(columns={
-            "nama_usaha": f"nama_usaha_{side}",
-            "alamat_usaha": f"alamat_usaha_{side}"
-        }).drop(columns=["idsbr"])
-
-# ===============================
-# GROUP + CONFIDENCE
-# ===============================
 groups = defaultdict(list)
 for i in range(len(df)):
     groups[find(i)].append(i)
@@ -286,7 +216,7 @@ for i in range(len(df)):
 group_rows = []
 for gid, members in groups.items():
     if len(members) > 1:
-        skor_group = pair_df[
+        skor = pair_df[
             pair_df["idsbr_1"].isin(df.loc[members, "idsbr"]) |
             pair_df["idsbr_2"].isin(df.loc[members, "idsbr"])
         ]["skor_akhir"]
@@ -295,128 +225,10 @@ for gid, members in groups.items():
             "jumlah_usaha": len(members),
             "nama_representatif": df.loc[members[0], "nama_usaha"],
             "kecamatan": df.loc[members[0], "nmkec"],
-            "confidence_group": round(skor_group.mean(), 2) if not skor_group.empty else None
+            "confidence_group": round(skor.mean(), 2) if not skor.empty else None
         })
 
 df_group = pd.DataFrame(group_rows).sort_values("jumlah_usaha", ascending=False)
 
-# ===============================
-# RINGKASAN OTOMATIS
-# ===============================
-st.subheader("📊 Ringkasan Otomatis")
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Usaha", len(df))
-c2.metric("Total Kelompok Mirip", len(df_group))
-c3.metric("Rata-rata Confidence", round(df_group["confidence_group"].mean(), 2))
-
-# ===============================
-# STATISTIK KECAMATAN
-# ===============================
-st.subheader("📍 Statistik Lintas Kecamatan")
-kec = df_group.groupby("kecamatan").agg(
-    jumlah_kelompok=("group_id", "count"),
-    total_usaha=("jumlah_usaha", "sum"),
-    rata_confidence=("confidence_group", "mean")
-).reset_index().sort_values("jumlah_kelompok", ascending=False)
-
-st.dataframe(kec, use_container_width=True)
-
-st.markdown("""
-**Interpretasi:**
-- Kecamatan dengan **banyak kelompok + confidence tinggi** adalah **prioritas verifikasi lapangan**.
-""")
-
-# ===============================
-# SEARCH + TOP N
-# ===============================
-st.subheader("📌 Kelompok Usaha Mirip")
-search = st.text_input("🔎 Cari (nama / kecamatan)")
-
-df_view = df_group.copy()
-if search:
-    s = search.lower()
-    df_view = df_view[
-        df_view["nama_representatif"].str.lower().str.contains(s, na=False) |
-        df_view["kecamatan"].str.lower().str.contains(s, na=False)
-    ]
-
-df_top = df_view.head(TOP_N_GROUP)
-df_rest = df_view.iloc[TOP_N_GROUP:]
-
-st.dataframe(df_top, use_container_width=True)
-
-# ===============================
-# EXPORT
-# ===============================
-if not df_rest.empty:
-    buf_grp = io.BytesIO()
-    df_rest.to_excel(buf_grp, index=False, engine="openpyxl")
-    st.download_button(
-        "📥 Download kelompok lainnya",
-        data=buf_grp.getvalue(),
-        file_name="kelompok_usaha_mirip_lainnya.xlsx"
-    )
-
-if not pair_df.empty:
-    buf_pair = io.BytesIO()
-    pair_df.to_excel(buf_pair, index=False, engine="openpyxl")
-    st.download_button(
-        "📥 Download pasangan usaha mirip",
-        data=buf_pair.getvalue(),
-        file_name="hasil_usaha_mirip.xlsx"
-    )
-
-# ===============================
-# DETAIL PER GRUP
-# ===============================
-st.subheader("🔎 Detail Usaha per Kelompok")
-
-for _, row in df_top.iterrows():
-    gid = int(row["group_id"][1:])
-    members = groups[gid]
-
-    with st.expander(
-        f"{row['group_id']} — {row['nama_representatif']} "
-        f"({row['jumlah_usaha']} usaha | Confidence {row['confidence_group']})"
-    ):
-        detail = df.loc[members, [
-            "idsbr", "nama_usaha", "alamat_usaha",
-            "latitude", "longitude",
-            "nmdesa", "nmkec",
-            "status_perusahaan", "sumber_data"
-        ]]
-        st.dataframe(detail, use_container_width=True)
-
-        st.markdown("#### 🧮 Skor Kemiripan Antar Usaha")
-        st.dataframe(
-            pair_df[
-                (pair_df["idsbr_1"].isin(detail["idsbr"])) |
-                (pair_df["idsbr_2"].isin(detail["idsbr"]))
-            ][[
-                "nama_usaha_1", "alamat_usaha_1",
-                "nama_usaha_2", "alamat_usaha_2",
-                "skor_nama", "skor_alamat",
-                "jarak_meter", "skor_akhir"
-            ]].sort_values("skor_akhir", ascending=False),
-            use_container_width=True
-        )
-
-        st.markdown("#### 📍 Peta Lokasi")
-        st.map(
-            detail[["latitude", "longitude"]]
-            .dropna()
-            .rename(columns={"latitude": "lat", "longitude": "lon"})
-        )
-
-# ===============================
-# LEGEND
-# ===============================
-st.markdown("""
-### 🧭 Interpretasi Skor
-- **≥ 90** : Hampir pasti usaha sama  
-- **80 – 89** : Sangat mungkin sama  
-- **70 – 79** : Perlu verifikasi  
-- **< 70** : Kemungkinan beda  
-""")
-
-
+st.success("✅ Proses selesai tanpa crash")
+st.dataframe(df_group.head(TOP_N_GROUP), use_container_width=True)
