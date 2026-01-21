@@ -22,6 +22,15 @@ if "is_running" not in st.session_state:
 if "finished" not in st.session_state:
     st.session_state.finished = False
 
+if "pair_df" not in st.session_state:
+    st.session_state.pair_df = pd.DataFrame()
+
+if "df_group" not in st.session_state:
+    st.session_state.df_group = pd.DataFrame()
+
+if "groups" not in st.session_state:
+    st.session_state.groups = {}
+
 # ===============================
 # STREAMLIT CONFIG
 # ===============================
@@ -333,7 +342,6 @@ if run_process and not st.session_state.finished:
     # PAIR DF + NAMA & ALAMAT
     # ===============================
     pair_df = pd.DataFrame(pair_scores)
-    pair_df = st.session_state.pair_df
     
     if not pair_df.empty:
         pair_df = pair_df.merge(
@@ -503,8 +511,3 @@ st.markdown("""
 - **70 – 79** : Perlu verifikasi  
 - **< 70** : Kemungkinan beda  
 """)
-
-
-
-
-
