@@ -372,7 +372,7 @@ if run_process and not st.session_state.finished:
                 "jumlah_usaha": len(members),
                 "nama_representatif": df.loc[members[0], "nama_usaha"],
                 "kecamatan": df.loc[members[0], "nmkec"],
-                "idsbr_list" : ", ".join(map(str, df.loc[members, "idsbr].tolist())),
+                "idsbr_list" : ", ".join(map(str, df.loc[members, "idsbr"].tolist())),
                 "confidence_group": round(skor.mean(), 2) if not skor.empty else None
             })
     
@@ -503,6 +503,7 @@ st.markdown("""
 - **70 – 79** : Perlu verifikasi  
 - **< 70** : Kemungkinan beda  
 """)
+
 
 
 
